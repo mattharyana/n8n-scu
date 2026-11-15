@@ -1,0 +1,126 @@
+{
+  "name": "Flowscope: weekly n8n audit",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "id": "6502e054-9748-42e9-aee4-5cfda5789baa",
+      "name": "Every Monday 9am",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "filters": {},
+        "requestOptions": {}
+      },
+      "id": "84594e3e-8d71-4906-b6e4-64fb6490fc9b",
+      "name": "Get all workflows",
+      "type": "n8n-nodes-base.n8n",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Audit every workflow in this n8n for the same holes Flowscope shows in 3D.\nconst KEYS = [/sk-(?:proj-)?[A-Za-z0-9_-]{24,}/, /sk-ant-[A-Za-z0-9_-]{20,}/, /[sr]k_live_[A-Za-z0-9]{16,}/, /AKIA[0-9A-Z]{16}/, /gh[pousr]_[A-Za-z0-9]{30,}/, /AIza[0-9A-Za-z_-]{35}/, /apify_api_[A-Za-z0-9]{20,}/, /xox[bp]-[A-Za-z0-9-]{20,}/];\nconst ACTION = /gmail|slack|googleSheets|airtable|notion|postgres|supabase|telegram|discord|httpRequest|hubspot|microsoftOutlook/i;\nconst lines = []; let total = 0;\nfor (const item of $input.all()) {\n  const wf = item.json; const nodes = wf.nodes || []; const out = [];\n  for (const n of nodes) {\n    const p = JSON.stringify(n.parameters || {});\n    if (KEYS.some(r => r.test(p))) out.push(`Key typed straight into node \"${n.name}\". Move it into a credential and rotate it.`);\n    if (/\\.webhook$/i.test(n.type) && !n.disabled && (!n.parameters?.authentication || n.parameters.authentication === 'none')) out.push(`Webhook \"${n.name}\" has no authentication. Anyone with the URL can run this workflow.`);\n  }\n  const conns = wf.connections || {};\n  for (const [from, c] of Object.entries(conns)) for (const group of (c.ai_tool || [])) for (const t of group) {\n    const tool = nodes.find(n => n.name === from);\n    if (tool && ACTION.test(tool.type)) out.push(`AI agent \"${t.node}\" can use \"${from}\" on its own. Add a human approval step for actions that send or change things.`);\n  }\n  if (wf.active && !wf.settings?.errorWorkflow) out.push('No error workflow. If this breaks, nobody hears about it.');\n  if (out.length) { total += out.length; lines.push(`${wf.name}${wf.active ? '' : ' (inactive)'}\\n` + out.map(o => '  - ' + o).join('\\n')); }\n}\nconst text = total ? `Flowscope checked ${$input.all().length} workflows and found ${total} things to fix:\\n\\n${lines.join('\\n\\n')}\\n\\nPaste any workflow into Flowscope to see it in 3D with step-by-step fixes.` : `Flowscope checked ${$input.all().length} workflows. All clear.`;\nreturn [{ json: { total, subject: total ? `Flowscope: ${total} things to fix in your n8n` : 'Flowscope: your n8n is all clear', text } }];"
+      },
+      "id": "dfcf40bc-5ae8-45f7-80b3-e37376add3ae",
+      "name": "Audit workflows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "you@example.com",
+        "subject": "={{ $json.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.text }}",
+        "options": {}
+      },
+      "id": "ee803681-2419-43d9-a725-0ee41154b890",
+      "name": "Email me",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        720,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Flowscope: weekly n8n audit\n1. In **Get all workflows**, add an **n8n API** credential (Settings > n8n API > Create an API key).\n2. Connect Gmail in **Email me** and set your address.\n3. Click **Execute workflow** to run it now, then activate it for every Monday.",
+        "height": 260,
+        "width": 420
+      },
+      "id": "e3dd4d01-5a1a-4c53-8370-600dafea68fa",
+      "name": "Setup note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -40
+      ]
+    }
+  ],
+  "connections": {
+    "Every Monday 9am": {
+      "main": [
+        [
+          {
+            "node": "Get all workflows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get all workflows": {
+      "main": [
+        [
+          {
+            "node": "Audit workflows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Audit workflows": {
+      "main": [
+        [
+          {
+            "node": "Email me",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

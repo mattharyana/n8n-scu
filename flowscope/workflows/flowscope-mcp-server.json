@@ -1,0 +1,136 @@
+{
+  "name": "Flowscope: MCP server",
+  "nodes": [
+    {
+      "parameters": {
+        "authentication": "bearerAuth",
+        "path": "flowscope"
+      },
+      "id": "4245d54e-5933-43cb-bcfd-5617e9e3086d",
+      "name": "Flowscope MCP",
+      "type": "@n8n/n8n-nodes-langchain.mcpTrigger",
+      "typeVersion": 1,
+      "position": [
+        460,
+        200
+      ],
+      "webhookId": "e058d066-9c93-4857-bc18-c06c894cc562"
+    },
+    {
+      "parameters": {
+        "toolDescription": "Scan a public GitHub repo with Flowscope. Returns what the app does, every outside service it talks to, and the top safety risks. Input: the repo as owner/name, for example vercel/next.js.",
+        "method": "POST",
+        "url": "https://YOUR-NAME.app.n8n.cloud/webhook/flowscope-scan",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "repo",
+              "value": "={{ $fromAI('repo', 'GitHub repo as owner/name', 'string') }}"
+            },
+            {
+              "name": "lite",
+              "value": "1"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "686fc0aa-e82f-4c67-ac77-001c8fe13a7e",
+      "name": "scan_github_repo",
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.2,
+      "position": [
+        200,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "name": "audit_n8n_workflow",
+        "description": "Audit an n8n workflow for security holes: keys typed into nodes, webhooks or MCP servers with no lock, AI agents that can send or change things with no human approval, and no error workflow. Input: the full workflow JSON as text (what you get from Ctrl+A, Ctrl+C in the n8n editor). Returns a health score and numbered fixes.",
+        "jsCode": "// Input: an n8n workflow as JSON text. Output: plain-language problems.\nlet wf;\ntry { wf = JSON.parse(query); } catch (e) { return 'That is not valid JSON. In n8n, select all nodes (Ctrl+A), copy (Ctrl+C) and pass the copied text.'; }\nif (wf.data && wf.data.nodes) wf = wf.data;\nif (Array.isArray(wf)) wf = wf[0];\nconst nodes = wf.nodes || [];\nconst KEYS = [/sk-(?:proj-)?[A-Za-z0-9_-]{24,}/, /sk-ant-[A-Za-z0-9_-]{20,}/, /[sr]k_live_[A-Za-z0-9]{16,}/, /AKIA[0-9A-Z]{16}/, /gh[pousr]_[A-Za-z0-9]{30,}/, /AIza[0-9A-Za-z_-]{35}/, /apify_api_[A-Za-z0-9]{20,}/, /xox[bp]-[A-Za-z0-9-]{20,}/];\nconst ACTION = /gmail|slack|googleSheets|airtable|notion|postgres|supabase|telegram|discord|httpRequest|hubspot|microsoftOutlook/i;\nconst out = [];\nfor (const n of nodes) {\n  if (n.disabled || /stickyNote/.test(n.type)) { if (n.disabled) out.push(`\"${n.name}\" is turned off but still in the workflow. Delete it once things work.`); continue; }\n  const p = JSON.stringify(n.parameters || {});\n  const auth = n.parameters?.authentication;\n  if (KEYS.some(r => r.test(p))) out.push(`Key typed straight into \"${n.name}\". Move it into an n8n credential, then make a new key and delete the old one.`);\n  if (/\\.webhook$/i.test(n.type) && (!auth || auth === 'none')) out.push(`Webhook \"${n.name}\" has no authentication. Set Authentication to Header Auth.`);\n  if (/mcpTrigger/i.test(n.type) && (!auth || auth === 'none')) out.push(`MCP server \"${n.name}\" has no authentication. Anyone with the URL can call its tools. Set Bearer Auth.`);\n  if (/chatTrigger/i.test(n.type) && n.parameters?.public) out.push(`Chat \"${n.name}\" is public. Anyone can spend your AI credits.`);\n}\nfor (const [from, c] of Object.entries(wf.connections || {})) for (const group of (c.ai_tool || [])) for (const t of group) {\n  const tool = nodes.find(n => n.name === from);\n  const target = nodes.find(n => n.name === t.node);\n  if (target && /mcpTrigger/i.test(target.type)) continue; // MCP clients ask the user before each call\n  if (tool && !tool.disabled && ACTION.test(tool.type) && !/^(get|getAll|search|read|list)$/i.test(String(tool.parameters?.operation || ''))) out.push(`AI agent \"${t.node}\" can use \"${from}\" on its own. Add a human approval step before it sends or changes anything.`);\n}\nif (!wf.settings?.errorWorkflow) out.push('No error workflow. If this breaks, nobody hears about it. Add one in workflow settings.');\nconst score = Math.max(0, 100 - out.length * 15);\nreturn out.length ? `Flowscope health score ${score}/100 for \"${wf.name || 'this workflow'}\" (${nodes.length} nodes). ${out.length} thing${out.length > 1 ? 's' : ''} to fix:\\n` + out.map((o, i) => `${i + 1}. ${o}`).join('\\n') : `Flowscope health score 100/100 for \"${wf.name || 'this workflow'}\". Nothing to fix.`;"
+      },
+      "id": "17022fe1-36bf-42d4-bbdd-bfbe3aaf49a0",
+      "name": "audit_n8n_workflow",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [
+        460,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "name": "check_code_for_keys",
+        "description": "Check code or a git diff for leaked API keys (OpenAI, Anthropic, Stripe, AWS, GitHub, Google, Apify, Slack) and secrets read in browser code. Use before every commit. Input: the code or diff as text. Returns line numbers, never the key values.",
+        "jsCode": "// Input: code or a git diff. Output: leaked keys by line. Never repeats the key itself.\nconst RULES = [\n  [/sk-(?:proj-)?[A-Za-z0-9_-]{24,}/, 'OpenAI key'], [/sk-ant-[A-Za-z0-9_-]{20,}/, 'Anthropic key'], [/[sr]k_live_[A-Za-z0-9]{16,}/, 'Stripe live key'],\n  [/AKIA[0-9A-Z]{16}/, 'AWS access key'], [/gh[pousr]_[A-Za-z0-9]{30,}/, 'GitHub token'], [/AIza[0-9A-Za-z_-]{35}/, 'Google API key'],\n  [/apify_api_[A-Za-z0-9]{20,}/, 'Apify token'], [/xox[bp]-[A-Za-z0-9-]{20,}/, 'Slack token'],\n  [/(VITE_|NEXT_PUBLIC_|REACT_APP_|EXPO_PUBLIC_)\\w*(SECRET|SERVICE_ROLE|OPENAI|ANTHROPIC|STRIPE_SECRET|RESEND)/, 'secret read in browser code'],\n  [/dangerouslyAllowBrowser\\s*:\\s*true/, 'AI SDK allowed in the browser'],\n];\nconst found = [];\nString(query || '').split('\\n').forEach((ln, i) => { if (ln.startsWith('-')) return; for (const [re, what] of RULES) if (re.test(ln)) found.push(`Line ${i + 1}: ${what}`); });\nreturn found.length ? `Flowscope found ${found.length} problem${found.length > 1 ? 's' : ''}:\\n${found.join('\\n')}\\n\\nFix: make a new key in that service and delete the old one, move it into .env, and read it only in server code.` : 'Flowscope found no leaked keys in this code.';"
+      },
+      "id": "a8f05418-f7a2-4584-a1dc-d7158d22e215",
+      "name": "check_code_for_keys",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Flowscope: MCP server\nLets Claude, Cursor or any MCP client use Flowscope as tools.\n\n1. In **Flowscope MCP**, create a **Bearer Auth** credential with a long random token. Never leave an MCP server on None: Flowscope flags that.\n2. In **scan_github_repo**, replace YOUR-NAME in the URL with the Production URL of the scan-repo workflow (it must be Active).\n3. Activate this workflow and copy the **Production URL** of **Flowscope MCP**.\n4. Add it to your MCP client (see SETUP.md, step 7).",
+        "height": 340,
+        "width": 460
+      },
+      "id": "c785e3df-642c-4f70-8564-004203e8e4a7",
+      "name": "Setup note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -80,
+        -60
+      ]
+    }
+  ],
+  "connections": {
+    "scan_github_repo": {
+      "ai_tool": [
+        [
+          {
+            "node": "Flowscope MCP",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "audit_n8n_workflow": {
+      "ai_tool": [
+        [
+          {
+            "node": "Flowscope MCP",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_code_for_keys": {
+      "ai_tool": [
+        [
+          {
+            "node": "Flowscope MCP",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

@@ -1,0 +1,134 @@
+{
+  "name": "Flowscope: push guard",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "flowscope-push",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "5716c49e-49e6-4084-a1ef-190d53e1604f",
+      "name": "GitHub push",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "cbc2b440-d6e1-4d36-af3a-cf5e4e48c930"
+    },
+    {
+      "parameters": {
+        "url": "={{ /^0+$/.test($json.body.before) ? 'https://api.github.com/repos/' + $json.body.repository.full_name + '/commits/' + $json.body.after : 'https://api.github.com/repos/' + $json.body.repository.full_name + '/compare/' + $json.body.before + '...' + $json.body.after }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "flowscope"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "74baefb6-f522-49f8-8b0e-f6d7ec02086f",
+      "name": "Get the changes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        300
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check every line added in this push for leaked keys and risky patterns.\nconst push = $('GitHub push').first().json.body || {};\nconst files = $input.first().json.files || [];\nconst RULES = [\n  { re: /sk-(?:proj-)?[A-Za-z0-9_-]{24,}/, what: 'OpenAI key pasted in code' },\n  { re: /sk-ant-[A-Za-z0-9_-]{20,}/, what: 'Anthropic key pasted in code' },\n  { re: /[sr]k_live_[A-Za-z0-9]{16,}/, what: 'Stripe live key pasted in code' },\n  { re: /AKIA[0-9A-Z]{16}/, what: 'AWS access key pasted in code' },\n  { re: /gh[pousr]_[A-Za-z0-9]{30,}/, what: 'GitHub token pasted in code' },\n  { re: /AIza[0-9A-Za-z_-]{35}/, what: 'Google API key pasted in code' },\n  { re: /(VITE_|NEXT_PUBLIC_|REACT_APP_|EXPO_PUBLIC_)\\w*(SECRET|SERVICE_ROLE|OPENAI|ANTHROPIC|STRIPE_SECRET|RESEND)/, what: 'Secret key read in browser code' },\n  { re: /dangerouslyAllowBrowser\\s*:\\s*true/, what: 'AI SDK allowed to run in the browser (sends your key to visitors)' },\n];\nconst found = [];\nfor (const f of files) {\n  if (/(^|\\/)\\.env($|\\.(?!example|sample))/.test(f.filename)) found.push({ file: f.filename, line: '-', what: '.env file was committed. Every key in it is now public.' });\n  let n = 0;\n  for (const ln of String(f.patch || '').split('\\n')) {\n    const m = ln.match(/^@@ -\\d+(?:,\\d+)? \\+(\\d+)/); if (m) { n = +m[1] - 1; continue; }\n    if (ln.startsWith('-')) continue; n++;\n    if (!ln.startsWith('+')) continue;\n    for (const r of RULES) if (r.re.test(ln)) found.push({ file: f.filename, line: n, what: r.what });\n  }\n}\nif (!found.length) return [];\nconst repo = push.repository?.full_name || 'your repo';\nconst who = push.pusher?.name || 'someone';\nconst text = `Flowscope found ${found.length} problem${found.length > 1 ? 's' : ''} in the push by ${who} to ${repo}:\\n\\n` +\n  found.map(f => `- ${f.what} (${f.file}, line ${f.line})`).join('\\n') +\n  `\\n\\nWhat to do now:\\n1. Make a new key in that service's dashboard and delete the old one. Removing it from the code does not undo a leak.\\n2. Move keys into .env and read them only in server code.\\n3. Add this rule to AGENTS.md so your AI stops doing it: \"Never put API keys in code or in VITE_/NEXT_PUBLIC_ variables.\"\\n\\nCommit: ${push.compare || ''}`;\nreturn [{ json: { repo, count: found.length, findings: found, subject: `Flowscope: ${found.length} leaked key${found.length > 1 ? 's' : ''} in ${repo}`, text } }];"
+      },
+      "id": "c5705077-d0e3-4088-b8bf-cbc0bbf47612",
+      "name": "Check added lines",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "you@example.com",
+        "subject": "={{ $json.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.text }}",
+        "options": {}
+      },
+      "id": "dfdb8506-1edb-459d-a8e0-bfb7e3670236",
+      "name": "Email me",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        720,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Flowscope: push guard\n1. Activate, then copy the **Production URL** of **GitHub push**.\n2. GitHub repo > Settings > Webhooks > Add webhook. Payload URL = that URL, content type **application/json**, event **Just the push event**.\n3. In **Email me**, connect Gmail and put your address. (Or swap in Slack / Discord.)\n\nFor real use, add a webhook secret in GitHub and check the X-Hub-Signature-256 header, so strangers can't trigger this.",
+        "height": 320,
+        "width": 440
+      },
+      "id": "3d578aec-d15e-44d2-a10c-b4de2ab1229f",
+      "name": "Setup note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -40
+      ]
+    }
+  ],
+  "connections": {
+    "GitHub push": {
+      "main": [
+        [
+          {
+            "node": "Get the changes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get the changes": {
+      "main": [
+        [
+          {
+            "node": "Check added lines",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check added lines": {
+      "main": [
+        [
+          {
+            "node": "Email me",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

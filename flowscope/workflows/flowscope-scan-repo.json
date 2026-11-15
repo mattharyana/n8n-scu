@@ -1,0 +1,316 @@
+{
+  "name": "Flowscope: scan a GitHub repo",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "flowscope-scan",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "9a4747cb-fb2f-417a-9e50-ed4c25a680a0",
+      "name": "Flowscope asks",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "5fb738c3-8bda-4f35-beda-eb0e6d248bdf"
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/' + String($json.body.repo || '').trim().replace(/^https?:\\/\\/github\\.com\\//,'').replace(/\\.git$/,'').replace(/\\/+$/,'') }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "flowscope"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "28ad2f9b-05f2-4a33-a76e-92613b181832",
+      "name": "Get repo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/' + $json.full_name + '/git/trees/' + $json.default_branch + '?recursive=1' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "flowscope"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7a6c8b65-779b-4e38-a5de-405481eb7542",
+      "name": "Get file list",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pick the files Flowscope needs. Never downloads .env files.\nconst repo = $('Get repo').first().json;\nconst tree = $input.first().json.tree || [];\nconst SKIP = /(^|\\/)(node_modules|\\.git|dist|build|\\.next|\\.vercel|coverage|vendor|venv|\\.venv|__pycache__)\\//;\nconst WANT = /(\\.(m?[jt]sx?|cjs|json|toml|ya?ml|py|vue|svelte|astro|sql|jsonc)|(^|\\/)requirements[^\\/]*\\.txt|(^|\\/)\\.env\\.(example|sample|template))$/;\nconst SECRET_ENV = /(^|\\/)\\.env($|\\.(?!example$|sample$|template$))/;\nconst files = tree\n  .filter(f => f.type === 'blob' && WANT.test(f.path) && !SKIP.test(f.path) && !SECRET_ENV.test(f.path) && (f.size || 0) < 200000)\n  .sort((a, b) => score(b.path) - score(a.path))\n  .slice(0, 80);\nfunction score(p) { return (/package\\.json$/.test(p) ? 100 : 0) + (/\\.env\\./.test(p) ? 90 : 0) + (/^(src|app|api|lib|pages|server|supabase)\\//.test(p) ? 20 : 0) - p.split('/').length; }\nreturn files.map(f => ({ json: { path: f.path, raw: `https://raw.githubusercontent.com/${repo.full_name}/${repo.default_branch}/${f.path}` } }));"
+      },
+      "id": "736ee916-024e-4d5d-b3fd-a20881994c69",
+      "name": "Pick files",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.raw }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "id": "7a468351-14a3-44b6-ad13-ac3940c0ade2",
+      "name": "Download files",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Bundle the downloaded files for Flowscope and run a quick key check for the AI.\nconst picked = $('Pick files').all();\nconst repo = $('Get repo').first().json;\nconst files = $input.all().map((it, i) => ({ p: picked[i].json.path, t: String(it.json.data ?? '') }));\nconst KEYS = [/sk-(?:proj-)?[A-Za-z0-9_-]{24,}/, /[sr]k_live_[A-Za-z0-9]{16,}/, /AKIA[0-9A-Z]{16}/, /gh[pousr]_[A-Za-z0-9]{30,}/, /AIza[0-9A-Za-z_-]{35}/, /sk-ant-[A-Za-z0-9_-]{20,}/];\nconst quick = [];\nfor (const f of files) f.t.split('\\n').forEach((ln, i) => { if (KEYS.some(r => r.test(ln))) quick.push(`Possible secret key in ${f.p} line ${i + 1}`); if (/(VITE_|NEXT_PUBLIC_|REACT_APP_)\\w*(SECRET|SERVICE_ROLE|OPENAI|STRIPE_SECRET)/.test(ln)) quick.push(`Secret read in browser code: ${f.p} line ${i + 1}`); });\nconst pkg = files.find(f => /(^|\\/)package\\.json$/.test(f.p));\nconst envEx = files.find(f => /\\.env\\.(example|sample|template)$/.test(f.p));\nreturn [{ json: {\n  name: repo.name, repo: repo.full_name, branch: repo.default_branch, description: repo.description || '',\n  files, fileCount: files.length, quick: quick.slice(0, 20),\n  packageJson: pkg ? pkg.t.slice(0, 4000) : 'none',\n  envNames: envEx ? envEx.t.split('\\n').map(l => l.split('=')[0].trim()).filter(Boolean).join(', ') : 'none',\n  paths: files.map(f => f.p).join('\\n').slice(0, 4000)\n} }];"
+      },
+      "id": "11e2d93a-61e9-4fdd-9903-abd6bb6d5172",
+      "name": "Package for Flowscope",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are explaining a code project to a beginner who built it with AI tools.\n\nRepo: {{ $json.repo }} ({{ $json.description }})\npackage.json:\n{{ $json.packageJson }}\n\nEnvironment variable names (values hidden): {{ $json.envNames }}\n\nFiles:\n{{ $json.paths }}\n\nQuick key check found: {{ $json.quick.join('; ') || 'nothing' }}\n\nWrite, in plain words, under 170 words, no emoji, no markdown headings:\n1. One sentence on what this app does.\n2. Every outside service it talks to and what data goes there, one short line each.\n3. The top 3 safety risks with a one-line fix each. If the key check found something, put it first.",
+        "options": {
+          "systemMessage": "You are Flowscope, a friendly security guide for people who build apps with AI. Be concrete, short and kind. Never print secret values."
+        }
+      },
+      "id": "eabe4d83-978e-4bcb-8d71-0bf6d8ef09cf",
+      "name": "Explain the stack",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        1320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini"
+        },
+        "options": {}
+      },
+      "id": "4144d39d-c659-403c-bb58-7b3aa73db0a1",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        1320,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const pack = $('Package for Flowscope').first().json;\nconst lite = String($('Flowscope asks').first().json.body?.lite || '') === '1';\n// lite=1 is for MCP clients: send the summary and file paths, not every file's contents.\nreturn [{ json: { name: pack.name, repo: pack.repo, branch: pack.branch, ...(lite ? { paths: pack.files.map(f => f.p) } : { files: pack.files }), quick: pack.quick, summary: $json.output || '' } }];"
+      },
+      "id": "0da154dc-7fd2-4ac8-9d0b-1f4da40ef072",
+      "name": "Merge answer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1580,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "b87276d5-c8dc-4e10-9574-4690aa3db651",
+      "name": "Send to Flowscope",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1800,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Flowscope: scan a GitHub repo\n1. Pick your OpenAI credential in **OpenAI Chat Model** (or swap in any chat model).\n2. Activate the workflow and copy the **Production URL** from **Flowscope asks**.\n3. Paste it into Flowscope under **n8n > Scan a GitHub repo**.\n\nPublic repos work with no GitHub key. If GitHub says *rate limit*, add a **Header Auth** credential (Authorization: Bearer your-token) to the two GitHub nodes. Use a credential, never paste the token into the URL.",
+        "height": 300,
+        "width": 420
+      },
+      "id": "4bd7f17f-abbe-45d3-9367-7df366c316eb",
+      "name": "Setup note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -20
+      ]
+    }
+  ],
+  "connections": {
+    "Flowscope asks": {
+      "main": [
+        [
+          {
+            "node": "Get repo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get repo": {
+      "main": [
+        [
+          {
+            "node": "Get file list",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get file list": {
+      "main": [
+        [
+          {
+            "node": "Pick files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick files": {
+      "main": [
+        [
+          {
+            "node": "Download files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download files": {
+      "main": [
+        [
+          {
+            "node": "Package for Flowscope",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Package for Flowscope": {
+      "main": [
+        [
+          {
+            "node": "Explain the stack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Explain the stack": {
+      "main": [
+        [
+          {
+            "node": "Merge answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge answer": {
+      "main": [
+        [
+          {
+            "node": "Send to Flowscope",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Explain the stack",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
