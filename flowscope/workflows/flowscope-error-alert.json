@@ -1,0 +1,65 @@
+{
+  "name": "Flowscope: error alerts",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "e71a4f22-fba2-490c-85eb-b17a6adf2f7d",
+      "name": "A workflow failed",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "you@example.com",
+        "subject": "=Flowscope: \"{{ $json.workflow.name }}\" just failed",
+        "emailType": "text",
+        "message": "=Your n8n workflow \"{{ $json.workflow.name }}\" stopped with an error.\n\nWhat broke: {{ $json.execution.error.message }}\nLast step that ran: {{ $json.execution.lastNodeExecuted }}\nSee the run: {{ $json.execution.url }}\n\nCommon causes: an expired key or credential, an API that changed, or a webhook getting data it didn't expect.",
+        "options": {}
+      },
+      "id": "8d13bc28-c6e1-4355-b4cf-1ab0c460423e",
+      "name": "Email me",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Flowscope: error alerts\n1. Connect Gmail in **Email me** (or swap in Slack / Discord).\n2. Save this workflow.\n3. In every other workflow: **Settings > Error Workflow** > pick **Flowscope: error alerts**.\n\nNow when anything breaks, you hear about it in minutes, not from an angry user.",
+        "height": 300,
+        "width": 420
+      },
+      "id": "85fb61b5-9270-47c1-ba7a-a1f0b7341ab5",
+      "name": "Setup note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -60
+      ]
+    }
+  ],
+  "connections": {
+    "A workflow failed": {
+      "main": [
+        [
+          {
+            "node": "Email me",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
