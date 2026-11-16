@@ -1,0 +1,627 @@
+{
+  "name": "Ahoj: clips to promo",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# Ahoj: clips in, promo out\nThree webhooks the website calls, in this order:\n\n**A. POST /style** reads the editing style of a reference YouTube video.  \n**B. POST /promo** plans the edit, composes music and starts the render.  \n**C. GET /promo-status** tells the website when the video is ready.\n\nn8n never touches video files. It passes links between Cloudinary (storage), Claude (editor), ElevenLabs (music) and Shotstack (renderer).",
+        "height": 250,
+        "width": 1260,
+        "color": 7
+      },
+      "id": "75b30bc2-12f8-4b82-af76-c99dcddb781e",
+      "name": "Note 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -704,
+        -544
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## A1. A reference video arrives\nThe website sends a YouTube link. We check it and write the brief for Gemini.",
+        "height": 320,
+        "width": 480,
+        "color": 6
+      },
+      "id": "38ac8796-91d4-4abe-8114-ed5b0fefd5ec",
+      "name": "Note 2",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -704,
+        -256
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## A2. Gemini watches the reference\nReturns a style profile: shot length, pacing, tempo (BPM), music genre, colour, text usage. If it takes over 70 seconds, we fall back to a default style.",
+        "height": 320,
+        "width": 740,
+        "color": 6
+      },
+      "id": "23fe326b-d04c-4e54-8e07-152ae810649b",
+      "name": "Note 3",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -176,
+        -256
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## B1. Clips arrive\nBrand details, the style profile and Cloudinary links to the clips. We turn each clip into still frames by changing its URL.",
+        "height": 320,
+        "width": 480,
+        "color": 5
+      },
+      "id": "01f711ad-8480-47ed-8797-db47670088cb",
+      "name": "Note 4",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -704,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## B2. AI director\nClaude sees the frames, works out the story, picks the shots and writes the copy.",
+        "height": 320,
+        "width": 280,
+        "color": 3
+      },
+      "id": "8f649765-ff23-4893-8fbd-bbc27765980d",
+      "name": "Note 5",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -176,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## B3. Music\nElevenLabs composes a track in the reference's genre and tempo. Cloudinary hosts it.",
+        "height": 320,
+        "width": 480,
+        "color": 4
+      },
+      "id": "724bbb26-fd4a-49a2-8dcb-f00e19e8082a",
+      "name": "Note 6",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        144,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## B4. Edit and render\nThe plan becomes a cut list: shots snapped to the beat, positioned text, end card, soundtrack. Shotstack starts rendering and we reply with a job id.",
+        "height": 320,
+        "width": 720,
+        "color": 2
+      },
+      "id": "47901868-fede-482d-bded-be42ae656a58",
+      "name": "Note 7",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        656,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## C. Is it ready?\nThe website asks every 3 seconds. We ask Shotstack and pass back the status and, when done, the video link.",
+        "height": 320,
+        "width": 700,
+        "color": 5
+      },
+      "id": "982d6fcb-a258-4447-8c9f-14bc7b463591",
+      "name": "Note 8",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -704,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "promo",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "a69f3ea3-149e-4605-997f-7cfcfbfdd094",
+      "name": "Clips arrive",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -624,
+        368
+      ],
+      "webhookId": "11111111-1111-4111-8111-1111111111a1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || {};\nconst clips = (Array.isArray(body.clips) ? body.clips : []).slice(0, 24);\nconst brand = body.brand || {};\nconst style = body.style || {};\nconst target = Number(body.length) || 30;\nconst NL = String.fromCharCode(10);\nconst avg = Math.max(0.5, Math.min(5, Number(style.avgShotLength) || 2));\nconst bpm = Number(style.bpm) >= 60 && Number(style.bpm) <= 180 ? Number(style.bpm) : 100;\nconst beat = Math.round(6000 / bpm) / 100;\nconst fracs = clips.length > 12 ? [0.15, 0.4, 0.65, 0.9] : [0.1, 0.3, 0.5, 0.7, 0.9];\nconst at = (c, f) => Math.round((Number(c.duration) || 2) * f * 10) / 10;\nconst ext = new RegExp('[.][a-z0-9]+$', 'i');\nconst frame = (c, sec) => String(c.url).replace('/upload/', '/upload/so_' + sec + ',w_480/').replace(ext, '.jpg');\nconst notes = style.editorNotes || style.summary || 'Cinematic travel film: unhurried, beautiful frames, cuts that land on the music, very little text.';\nconst prompt = [\n  'You are a senior film editor and copywriter. Cut a ' + target + '-second brand film for the travel company below from the supplied clips, in the editing style of a reference film.',\n  'Company: ' + (brand.name || '') + '. Tagline: ' + (brand.tagline || '') + '. Call to action: ' + (brand.cta || '') + '.',\n  '',\n  'REFERENCE STYLE (match its feel closely): ' + notes,\n  'Reference numbers: average shot ' + avg + 's; shot length range ' + JSON.stringify(style.shotLengthRange || [1, 4]) + 's; pacing: ' + (style.pacing || 'builds slowly') + '; camera feel: ' + (style.motion || 'smooth') + '.',\n  'The music is ' + bpm + ' BPM, so one beat is ' + beat + ' seconds. Every shot length must be a whole number of beats.',\n  '',\n  'THE FOOTAGE: each clip has an id, a duration, and frames labelled with their timestamps. Clips are in upload order, which may follow the order they were shot.',\n  '',\n  'STORY (this matters most):',\n  '- First work out what actually happened on this trip from the frames: the places, the people, the meals, the weather, the time of day.',\n  '- Build one story with a beginning, a middle and an end. Not a random montage.',\n  '- Beginning: arrive. One establishing shot that says where we are. Middle: the days unfold; move through places and moments in an order that feels like travelling, keep shots from the same place together, let the time of day move forward. End: the emotional high point, then one quiet closing shot.',\n  '- Every shot must move the story forward. Leave out clips that do not fit. Never put two shots from the same clip back to back.',\n  '- Pick each in-point where the action or composition is strongest, judged from the frame timestamps. Fill about ' + (target - 3) + ' seconds.',\n  '- Contrast neighbours: wide then close, still then moving, landscape then people.',\n  '- effect per shot: \"zoomIn\" or \"zoomOut\" for a slow push on still, scenic shots; \"none\" for shots that already move.',\n  '',\n  'COPY (on-screen words):',\n  '- Write the way Apple writes. Plain words. Sentence case. Short declarative sentences that end with a full stop. Never all caps. No exclamation marks, no hashtags, no emoji, no ellipses.',\n  '- Write like a person who was on this trip, about what is truly in the footage. Specific and understated. A little dry wit is welcome.',\n  '- Banned words and phrases: unforgettable, adventure, awaits, hidden gems, breathtaking, journey, explore, discover, escape, wanderlust, memories, experience, stunning, epic, vibes.',\n  '- title: 2 to 4 words, shown over the opening shot.',\n  '- Put a line of copy on 3 to 5 shots only (the caption field), 2 to 6 words each. Read in order, the lines should form one continuous thought about the trip. Every other caption is an empty string.',\n  '- captionPosition for each line of copy: put it where the frame has calm empty space (sky, water, road, a plain wall) and never over a face or the main subject. One of top, topLeft, topRight, left, center, right, bottomLeft, bottom, bottomRight. Vary it from line to line.',\n  '- Lines of copy are always white, so only place them over areas dark or busy enough for white text to read clearly.',\n  '- titlePosition: the same placement choice for the title on the opening shot. titleTone: \"light\" for white text, or \"dark\" for near-black text only if the title sits on a bright, plain area such as pale sky.',\n  '- The lines must make sense read in the order they appear. If they mention times of day, places or stages of the trip, those must move forward, never backwards, and each line must match what is on screen in its own shot.',\n  '- endLine: one closing line of at most 6 words that lands the story. It must not repeat the call to action or the tagline.',\n  '- caption (top level): two short sentences for the social post in the same voice. hashtags: 3 to 5, lower case.',\n  '',\n  '- story: one sentence describing the arc you built.',\n  '- landscapeClips: ids of every clip whose frames are wider than they are tall.',\n  'Return only JSON, no code fences: {\"story\":\"\",\"title\":\"\",\"titlePosition\":\"center\",\"titleTone\":\"light\",\"endLine\":\"\",\"caption\":\"\",\"hashtags\":[],\"landscapeClips\":[],\"shots\":[{\"clipId\":\"\",\"start\":0,\"length\":0,\"effect\":\"none\",\"caption\":\"\",\"captionPosition\":\"bottom\"}]}'\n].join(NL);\nconst content = [{ type: 'text', text: prompt }];\nfor (const c of clips) {\n  content.push({ type: 'text', text: 'Clip ' + c.id + ', duration ' + c.duration + ' seconds.' });\n  for (const f of fracs) {\n    const sec = at(c, f);\n    content.push({ type: 'text', text: c.id + ' at ' + sec + 's:' });\n    content.push({ type: 'image', source: { type: 'url', url: frame(c, sec) } });\n  }\n}\nreturn [{ json: { request: { model: 'claude-opus-5-5', max_tokens: 12000, messages: [{ role: 'user', content }] } } }];"
+      },
+      "id": "40e15c27-6625-4d40-b4e0-e0da7609220c",
+      "name": "Grab still frames",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.request) }}",
+        "options": {
+          "timeout": 150000
+        }
+      },
+      "id": "c245a868-7311-4963-b548-0963df5a4ae9",
+      "name": "AI director (Claude)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -80,
+        368
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "dH7Vf7Cpx41JU3Jg",
+          "name": "Anthropic"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('Clips arrive').first().json.body || {};\nconst clips = Array.isArray(body.clips) ? body.clips : [];\nconst brand = body.brand || {};\nconst style = body.style || {};\nconst target = Number(body.length) || 30;\nconst vertical = (body.shape || 'vertical') !== 'landscape';\n\n// 1. Plan from the AI director, with a safe fallback\nlet plan = null;\nlet director = 'fallback';\ntry {\n  const ai = $('AI director (Claude)').first().json || {};\n  const text = (ai.content || []).filter(b => b.type === 'text').map(b => b.text).join('');\n  if (text) {\n    const a = text.indexOf('{');\n    const z = text.lastIndexOf('}');\n    const p = JSON.parse(a >= 0 && z > a ? text.slice(a, z + 1) : text);\n    if (p && Array.isArray(p.shots) && p.shots.length) { plan = p; director = 'claude'; }\n  }\n} catch (e) {}\nif (!plan && body.plan && Array.isArray(body.plan.shots) && body.plan.shots.length) { plan = body.plan; director = 'request'; }\nif (!plan) {\n  const shots = [];\n  let total = 0;\n  for (const c of clips) {\n    const dur = Number(c.duration) || 2;\n    const len = Math.min(2, dur);\n    if (total + len > target - 3.5) break;\n    shots.push({ clipId: c.id, start: Math.max(0, Math.min(1, dur - len)), length: len, caption: '' });\n    total += len;\n  }\n  plan = { title: brand.tagline || brand.name || '', caption: brand.tagline || '', hashtags: [], shots };\n}\n\n// 2. Style from the reference video\nconst fade = style.transition === 'fade';\nconst filter = ['boost', 'contrast', 'muted', 'greyscale', 'darken', 'lighten'].includes(style.filter) ? style.filter : null;\nconst bpm = Number(style.bpm) >= 60 && Number(style.bpm) <= 180 ? Number(style.bpm) : 100;\nconst beat = 60 / bpm;\nconst effects = ['zoomIn', 'zoomOut', 'slideLeft', 'slideRight', 'slideUp', 'slideDown'];\nconst W = vertical ? 1080 : 1920;\nconst H = vertical ? 1920 : 1080;\nconst base = Math.min(W, H);\nconst r2 = n => Math.round(n * 100) / 100;\n\n// 3. Typography: positioned, animated, with hierarchy\nconst anchors = ['top', 'topLeft', 'topRight', 'left', 'center', 'right', 'bottomLeft', 'bottom', 'bottomRight'];\nconst mkText = (text, size, start, length, anchor, o) => {\n  o = o || {};\n  const pos = anchors.includes(anchor) ? anchor : 'bottom';\n  const isL = pos === 'left' || pos.indexOf('Left') > 0;\n  const isR = pos === 'right' || pos.indexOf('Right') > 0;\n  const isT = pos.indexOf('top') === 0;\n  const isB = pos.indexOf('bottom') === 0;\n  const asset = {\n    type: 'text', text: String(text),\n    width: Math.round(W * (o.w || (isL || isR ? 0.72 : 0.88))), height: Math.round(H * (o.h || 0.16)),\n    font: { family: 'Montserrat SemiBold', color: o.tone === 'dark' ? '#111111' : '#ffffff', size },\n    alignment: { horizontal: isL ? 'left' : (isR ? 'right' : 'center'), vertical: 'center' }\n  };\n  if (o.bg) asset.background = o.bg;\n  const clip = {\n    asset, start: r2(start), length: r2(Math.max(0.4, length)), position: pos,\n    offset: { x: r2((isL ? 0.07 : (isR ? -0.07 : 0)) + (o.dx || 0)), y: r2((isT ? -0.09 : (isB ? 0.11 : 0)) + (o.dy || 0)) },\n    transition: { in: o.tin || 'fade', out: 'fade' }\n  };\n  if (o.opacity) clip.opacity = o.opacity;\n  return clip;\n};\n\n// 4. Cut list, snapped to the beat\nlet t = 0;\nconst videoClips = [];\nconst textClips = [];\nconst cleanShots = [];\nconst bgClips = [];\nconst land = new Set(Array.isArray(plan.landscapeClips) ? plan.landscapeClips : []);\nlet lastSrc = null;\nlet lastClip = null;\nfor (const s of plan.shots) {\n  const c = clips.find(x => x.id === s.clipId);\n  if (!c) continue;\n  const dur = Number(c.duration) || Number(s.length) || 2;\n  let length = Number(s.length) || 2;\n  length = Math.max(beat, Math.round(length / beat) * beat);\n  length = r2(Math.max(0.4, Math.min(length, dur)));\n  if (t + length > target - 3.2 && videoClips.length >= 3) break;\n  const trim = r2(Math.max(0, Math.min(Number(s.start) || 0, Math.max(0, dur - length))));\n  const src = String(c.url).replace('/upload/', '/upload/q_auto:best,c_limit,w_1920,h_1920/');\n  const hasDims = c.width && c.height;\n  const wide = hasDims ? Number(c.width) > Number(c.height) : land.has(c.id);\n  const mismatch = vertical ? wide : (hasDims ? Number(c.height) > Number(c.width) : false);\n  const v = { asset: { type: 'video', src, trim, volume: 0 }, start: r2(t), length, fit: mismatch ? 'contain' : 'cover' };\n  if (mismatch) bgClips.push({ asset: { type: 'video', src, trim, volume: 0 }, start: r2(t), length, fit: 'cover', filter: 'blur' });\n  if (fade) v.transition = { in: 'fade', out: 'fade' };\n  if (filter) v.filter = filter;\n  if (effects.includes(s.effect)) v.effect = s.effect;\n  videoClips.push(v);\n  let shownCaption = '';\n  if (videoClips.length === 1 && (plan.title || brand.name)) {\n    const a = anchors.includes(plan.titlePosition) ? plan.titlePosition : 'center';\n    if (brand.name && plan.title) textClips.push(mkText(brand.name, Math.round(base * 0.03), t + 0.2, length - 0.2, a, { tone: plan.titleTone, dy: 0.075, opacity: 0.85, h: 0.06 }));\n    textClips.push(mkText(plan.title || brand.name, Math.round(base * 0.085), t + 0.35, length - 0.35, a, { tone: plan.titleTone, tin: 'slideUp' }));\n  } else if (s.caption) {\n    const inset = length > 1.4 ? 0.25 : 0;\n    textClips.push(mkText(s.caption, Math.round(base * 0.052), t + inset, length - inset * 2, s.captionPosition, { tin: 'slideUp' }));\n    shownCaption = s.caption;\n  }\n  cleanShots.push({ clipId: c.id, start: trim, length, caption: shownCaption });\n  lastSrc = src;\n  lastClip = { dur, end: trim + length };\n  t = r2(t + length);\n}\nif (!videoClips.length) throw new Error('No usable clips in request');\n\n// 5. End card over the last shot, blurred and dimmed\nconst E = 3.2;\nif (lastSrc) {\n  let etrim = lastClip.end;\n  if (etrim + E > lastClip.dur) etrim = Math.max(0, lastClip.dur - E);\n  videoClips.push({ asset: { type: 'video', src: lastSrc, trim: r2(etrim), volume: 0 }, start: r2(t), length: r2(Math.min(E, lastClip.dur)), fit: 'cover', filter: 'blur', opacity: 0.45 });\n}\nconst low = x => String(x || '').toLowerCase().replace(/[^a-z]/g, '');\nlet headline = plan.endLine || brand.tagline || brand.name || '';\nif (brand.cta && low(headline) === low(brand.cta)) headline = brand.tagline || brand.name || headline;\nif (brand.name) textClips.push(mkText(brand.name, Math.round(base * 0.03), t + 0.3, E - 0.3, 'center', { dy: 0.1, opacity: 0.85, h: 0.06 }));\nif (headline) textClips.push(mkText(headline, Math.round(base * 0.075), t + 0.5, E - 0.5, 'center', { dy: 0.02, tin: 'slideUp' }));\nif (brand.cta) textClips.push(mkText(brand.cta, Math.round(base * 0.034), t + 1.1, E - 1.1, 'center', { dy: -0.1, tone: 'dark', w: 0.46, h: 0.042, bg: { color: '#ffffff', opacity: 1, borderRadius: Math.round(base * 0.04), padding: 0 } }));\nplan.shots = cleanShots;\n\n// 6. Music\nlet musicUrl = null;\ntry { musicUrl = $input.first().json.secure_url || null; } catch (e) {}\nconst edit = {\n  timeline: Object.assign({ background: '#000000', tracks: [{ clips: textClips }, { clips: videoClips }].concat(bgClips.length ? [{ clips: bgClips }] : []) }, musicUrl ? { soundtrack: { src: musicUrl, effect: 'fadeOut', volume: 0.8 } } : {}),\n  output: { format: 'mp4', size: { width: W, height: H } }\n};\nreturn [{ json: { plan, director, music: !!musicUrl, edit } }];"
+      },
+      "id": "2c4ab421-1148-4891-83e2-4f703a1d6dc0",
+      "name": "Build cut list",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        752,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.shotstack.io/edit/stage/render",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.edit) }}",
+        "options": {}
+      },
+      "id": "8a13f773-731d-4e47-9685-e986bdb2173d",
+      "name": "Render video",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        976,
+        368
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "nSimLu7rDD0srnpc",
+          "name": "Shotstack"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ jobId: $json.response.id, plan: $('Build cut list').first().json.plan, director: $('Build cut list').first().json.director, music: $('Build cut list').first().json.music }) }}",
+        "options": {}
+      },
+      "id": "2d38ae2d-b3b4-459f-8b49-39857dd5b58e",
+      "name": "Reply with job",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1200,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "path": "promo-status",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "06fa660d-2179-4364-a4bf-0ac26a7aeb49",
+      "name": "Status check",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -624,
+        832
+      ],
+      "webhookId": "11111111-1111-4111-8111-1111111111a2"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.shotstack.io/edit/stage/render/{{ $json.query.jobId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "d5cc5671-fb91-49a0-b08a-4f81380d4f03",
+      "name": "Ask renderer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -400,
+        832
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "nSimLu7rDD0srnpc",
+          "name": "Shotstack"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: $json.response.status === 'done' ? 'done' : ($json.response.status === 'failed' ? 'failed' : ($json.response.status === 'queued' ? 'queued' : 'rendering')), videoUrl: $json.response.url || null, error: $json.response.error || null }) }}",
+        "options": {}
+      },
+      "id": "bb67b65d-f94b-4ed7-8c46-6f53e9da4548",
+      "name": "Reply with status",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -176,
+        832
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "style",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "0303ae8f-77be-4cb5-8baa-1c8f8a4bc6d6",
+      "name": "Reference arrives",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -624,
+        -96
+      ],
+      "webhookId": "11111111-1111-4111-8111-1111111111a3"
+    },
+    {
+      "parameters": {
+        "jsCode": "const url = ($input.first().json.body || {}).referenceUrl || '';\nif (!/^https?:\\/\\/(www\\.|m\\.)?(youtube\\.com|youtu\\.be)\\//i.test(url)) throw new Error('referenceUrl must be a public YouTube link');\nconst prompt = [\n  'You are a senior video editor. Watch this video closely, picture and sound, and write a precise brief of its EDITING STYLE so another editor can cut completely different footage to feel the same. Describe the craft, not the subject matter.',\n  'Return only JSON with exactly these fields:',\n  '{\"summary\": one sentence describing the edit,',\n  ' \"editorNotes\": 6 to 9 sentences of concrete direction: how it opens, how shots are chosen and ordered, rhythm and where it speeds up or breathes, relationship of cuts to the music, camera movement and any speed changes or zooms, how and how often text appears, colour grade, how it ends,',\n  ' \"avgShotLength\": average seconds per shot as a number,',\n  ' \"shotLengthRange\": [shortest typical shot in seconds, longest typical shot in seconds],',\n  ' \"pacing\": short phrase,',\n  ' \"cutStyle\": short phrase, e.g. hard cuts on the beat, cross dissolves, whip pans,',\n  ' \"motion\": short phrase about camera movement, zooms, speed ramps,',\n  ' \"textUsage\": one of \"none\", \"title only\", \"sparse\", \"every shot\",',\n  ' \"captionStyle\": short phrase describing on-screen text, or none,',\n  ' \"colorMood\": short phrase,',\n  ' \"musicMood\": short phrase,',\n  ' \"musicGenre\": short phrase with instruments, e.g. cinematic electronic with piano and deep drums,',\n  ' \"bpm\": estimated music tempo in beats per minute as a number,',\n  ' \"structure\": short phrase,',\n  ' \"transition\": \"none\" or \"fade\",',\n  ' \"captionCase\": \"upper\" or \"sentence\",',\n  ' \"captionPosition\": \"top\" or \"center\" or \"bottom\",',\n  ' \"filter\": one of \"none\", \"boost\", \"contrast\", \"muted\", \"greyscale\"}'\n].join('\\n');\nreturn [{ json: { request: { contents: [{ parts: [{ file_data: { file_uri: url }, video_metadata: { start_offset: '0s', end_offset: '90s' } }, { text: prompt }] }], generationConfig: { responseMimeType: 'application/json' } } } }];"
+      },
+      "id": "df6a5cd2-0343-411c-b221-ed4fcd4d3600",
+      "name": "Prepare reference",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.request) }}",
+        "options": {
+          "timeout": 70000
+        }
+      },
+      "id": "33f86cc0-9c7a-48a4-ae74-e63a614eb83c",
+      "name": "Watch reference (Gemini)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -80,
+        -96
+      ],
+      "retryOnFail": false,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "9aJSQZrYA4YQh63d",
+          "name": "Gemini"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const fallback = { summary: 'Energetic montage with hard cuts and bold captions', avgShotLength: 2, cutStyle: 'hard cuts', captionStyle: 'large, uppercase, bottom', colorMood: 'natural', musicMood: 'upbeat', structure: 'hook, montage, end card', transition: 'none', captionCase: 'upper', captionPosition: 'bottom', filter: 'none', editorNotes: '', shotLengthRange: [0.6, 3], pacing: 'builds', motion: 'dynamic', textUsage: 'sparse', musicGenre: 'upbeat indie pop', bpm: 120 };\nlet style = null;\ntry {\n  const j = $input.first().json || {};\n  const text = j.candidates[0].content.parts.map(p => p.text || '').join('');\n  const m = text.match(/\\{[\\s\\S]*\\}/);\n  style = Object.assign({}, fallback, JSON.parse(m ? m[0] : text));\n  style.avgShotLength = Math.max(0.4, Math.min(5, Number(style.avgShotLength) || 2));\n} catch (e) {}\nreturn [{ json: { style: style || fallback, analysed: !!style } }];"
+      },
+      "id": "9609c215-86c8-4509-8fdd-88f1afe3a705",
+      "name": "Style profile",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        144,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "4144e791-3e80-4256-8e53-92d5eab64fc2",
+      "name": "Reply with style",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        352,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.elevenlabs.io/v1/music",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ prompt: 'Instrumental soundtrack for a short promotional video. Genre and instruments: ' + (($('Clips arrive').first().json.body.style || {}).musicGenre || 'upbeat indie pop with guitar and claps') + '. Mood: ' + ((($('Clips arrive').first().json.body.style || {}).musicMood || '').match(/^(none|)$/i) ? 'feel-good, sunny road trip' : $('Clips arrive').first().json.body.style.musicMood) + '. Tempo exactly ' + ((Number(($('Clips arrive').first().json.body.style || {}).bpm) >= 60 && Number(($('Clips arrive').first().json.body.style || {}).bpm) <= 180) ? Number($('Clips arrive').first().json.body.style.bpm) : 120) + ' BPM with a clear, steady beat from the very first second. No vocals. Clean ending.', music_length_ms: (Math.min(60, Number($('Clips arrive').first().json.body.length) || 30) + 1) * 1000, force_instrumental: true }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          },
+          "timeout": 120000
+        }
+      },
+      "id": "eb233bbf-236b-4304-a20b-d82bb9a42af2",
+      "name": "Compose music (ElevenLabs)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        224,
+        368
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "LQYVKUQNPw3s5oCW",
+          "name": "Elevenlabs"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.cloudinary.com/v1_1/xooqcuhv/video/upload",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "upload_preset",
+              "value": "ahoj_unsigned"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "2117841a-cd47-4606-87ce-05d1927b1b7a",
+      "name": "Host music (Cloudinary)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        432,
+        368
+      ],
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Clips arrive": {
+      "main": [
+        [
+          {
+            "node": "Grab still frames",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Grab still frames": {
+      "main": [
+        [
+          {
+            "node": "AI director (Claude)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI director (Claude)": {
+      "main": [
+        [
+          {
+            "node": "Compose music (ElevenLabs)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build cut list": {
+      "main": [
+        [
+          {
+            "node": "Render video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Render video": {
+      "main": [
+        [
+          {
+            "node": "Reply with job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status check": {
+      "main": [
+        [
+          {
+            "node": "Ask renderer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask renderer": {
+      "main": [
+        [
+          {
+            "node": "Reply with status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reference arrives": {
+      "main": [
+        [
+          {
+            "node": "Prepare reference",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare reference": {
+      "main": [
+        [
+          {
+            "node": "Watch reference (Gemini)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Watch reference (Gemini)": {
+      "main": [
+        [
+          {
+            "node": "Style profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Style profile": {
+      "main": [
+        [
+          {
+            "node": "Reply with style",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compose music (ElevenLabs)": {
+      "main": [
+        [
+          {
+            "node": "Host music (Cloudinary)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Host music (Cloudinary)": {
+      "main": [
+        [
+          {
+            "node": "Build cut list",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "0b144a7a-95f4-45fb-a954-4da934a589f8",
+  "meta": {
+    "instanceId": "c66a90e8e0a186af6744cab3051ef1c1e8a48624314d0fc554f2825e6a3c99ae"
+  },
+  "nodeGroups": [],
+  "id": "nbrt5ljavi1NzdYn",
+  "tags": []
+}
