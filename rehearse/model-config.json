@@ -1,0 +1,12 @@
+{
+  "provider": "gemini",
+  "embedding_provider": "local",
+  "voice_models": {
+    "transcription": "gemini-3.5-transcribe",
+    "speech": "gemini-3.8-flash-lite-tts"
+  },
+  "chat_models": {
+    "gemini": "models/gemini-3.8-flash",
+    "openai": "gpt-4.1-mini"
+  }
+}

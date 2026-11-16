@@ -1,0 +1,169 @@
+{
+  "id": "interviewReview",
+  "name": "Interview 03 - Daily review queue",
+  "active": false,
+  "nodes": [
+    {
+      "id": "bf43d2f4-5677-502f-b3cb-d5ace5d55f3b",
+      "name": "Every morning",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "92e9e94e-307c-5072-bac7-20e33104a7fc",
+      "name": "Refresh review now",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "c6df77ea-22c0-5544-a1c3-0792231db447",
+      "name": "Find due topics",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT coalesce(jsonb_agg(to_jsonb(p) ORDER BY CASE priority WHEN 'unpracticed' THEN 0 WHEN 'high' THEN 1 ELSE 2 END,next_review_at),'[]') AS topics FROM interview_progress p JOIN interview_topics t USING(topic_id) WHERE priority<>'scheduled' AND t.embedding_provider=$1;",
+        "options": {
+          "queryReplacement": "={{ [\"local\"] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "mockInterviewPostgres",
+          "name": "Interview Postgres"
+        }
+      }
+    },
+    {
+      "id": "1dbbe748-1011-51df-a367-bb97f14e435b",
+      "name": "Build review plan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const topics=$json.topics;\nconst digest=topics.length?'Today\\'s interview practice\\n\\n'+topics.map((t,i)=>`${i+1}. ${t.title} — ${t.priority}; ${t.mastery_score??'unscored'}/5\\n${t.next_action??'Practice ownership, evidence of impact, and one trade-off.'}`).join('\\n\\n'):'No topics are due today.';\nreturn [{json:{topics,digest}}];"
+      }
+    },
+    {
+      "id": "67609591-e056-5c3a-95b5-41f4b95ca1d6",
+      "name": "Save daily plan",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "position": [
+        740,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO interview_review_plans(plan_date,topics,digest) VALUES((now() AT TIME ZONE 'America/Los_Angeles')::date,$1::jsonb,$2) ON CONFLICT(plan_date) DO UPDATE SET topics=EXCLUDED.topics,digest=EXCLUDED.digest,generated_at=now() RETURNING digest AS output;",
+        "options": {
+          "queryReplacement": "={{ [JSON.stringify($json.topics),$json.digest] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "mockInterviewPostgres",
+          "name": "Interview Postgres"
+        }
+      }
+    },
+    {
+      "id": "ff9d2c4c-099b-58b0-b5db-699ccb24aa91",
+      "name": "Guide 5",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -300
+      ],
+      "parameters": {
+        "content": "## 3 · Spaced review\nRuns at 08:00 America/Los_Angeles while Docker is running.\nSaves a local daily plan. `/review` always shows the current due queue.\n\nScores 1–2: 1 day · 3: 2 days · 4: 7 days · 5: 14 days. Never-practiced topics come first.\n\nNo external messages are sent. To add email, Slack, or Telegram, connect your chosen notification node after Save daily plan, then configure its destination.",
+        "height": 240,
+        "width": 760,
+        "color": 5
+      }
+    }
+  ],
+  "connections": {
+    "Every morning": {
+      "main": [
+        [
+          {
+            "node": "Find due topics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Refresh review now": {
+      "main": [
+        [
+          {
+            "node": "Find due topics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find due topics": {
+      "main": [
+        [
+          {
+            "node": "Build review plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build review plan": {
+      "main": [
+        [
+          {
+            "node": "Save daily plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Los_Angeles",
+    "executionTimeout": 240,
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all"
+  },
+  "versionId": "cbedabe4-e2bf-525c-8dc9-211cb5808696",
+  "pinData": {},
+  "tags": []
+}

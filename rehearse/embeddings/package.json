@@ -1,0 +1,10 @@
+{
+  "name": "interview-local-embeddings",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@huggingface/transformers": "3.8.1",
+    "mammoth": "1.12.1"
+  }
+}

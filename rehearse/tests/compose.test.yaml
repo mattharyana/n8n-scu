@@ -1,0 +1,9 @@
+services:
+  mock-model:
+    image: docker.n8n.io/n8nio/n8n:2.47.7
+    entrypoint: [node, /test/mock-model.mjs]
+    volumes:
+      - ./tests:/test:ro
+  n8n:
+    depends_on:
+      - mock-model
