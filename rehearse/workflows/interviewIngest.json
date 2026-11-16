@@ -1,0 +1,666 @@
+{
+  "id": "interviewIngest",
+  "name": "Interview 01 - Add resume or story",
+  "active": false,
+  "nodes": [
+    {
+      "id": "5f3bffc7-5aae-5f7c-9bd7-8eabdc8b626c",
+      "name": "Add interview material",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "path": "interview-materials",
+        "formTitle": "Build your interview knowledge base",
+        "formDescription": "Add one experience or story per topic. Reuse a Topic ID to replace its source while preserving practice history. Paste text OR upload PDF, Word (.docx), Markdown, or plain text.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Topic ID",
+              "fieldType": "text",
+              "requiredField": true,
+              "placeholder": "cache-project or conflict-story"
+            },
+            {
+              "fieldLabel": "Topic title",
+              "fieldType": "text",
+              "requiredField": true,
+              "placeholder": "Caching service redesign"
+            },
+            {
+              "fieldLabel": "Category",
+              "fieldType": "dropdown",
+              "requiredField": true,
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "resume_bullet"
+                  },
+                  {
+                    "option": "bq_story"
+                  },
+                  {
+                    "option": "system_design"
+                  }
+                ]
+              }
+            },
+            {
+              "fieldLabel": "Source text",
+              "fieldType": "textarea",
+              "placeholder": "Paste one project, resume bullet with context, or STAR story. Markdown is supported. Or upload a file below."
+            },
+            {
+              "fieldLabel": "Source file (PDF, Word, Markdown, or text)",
+              "fieldType": "file",
+              "multipleFiles": false,
+              "acceptFileTypes": ".pdf,.docx,.md,.markdown,.txt"
+            }
+          ]
+        },
+        "responseMode": "lastNode",
+        "options": {
+          "buttonLabel": "Index material",
+          "respondWithOptions": {
+            "values": {
+              "respondWith": "text",
+              "formSubmittedText": "Material indexed. Open your interview chat and send /start."
+            }
+          }
+        }
+      },
+      "webhookId": "interview-materials"
+    },
+    {
+      "id": "7cfc9f52-55ba-5575-a634-a3bb2b733333",
+      "name": "Normalize material",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const j=$json;\nconst topic_id=String(j['Topic ID']??'').trim();\nconst title=String(j['Topic title']??'').trim();\nconst category=String(j.Category??'').trim();\nif(!/^[a-zA-Z0-9_-]{1,80}$/.test(topic_id)) throw new Error('Use a Topic ID of 1–80 letters, numbers, underscores, or hyphens.');\nif(!title || title.length>180) throw new Error('Enter a title of at most 180 characters.');\nif(!['resume_bullet','bq_story','system_design'].includes(category)) throw new Error('Choose a valid category.');\nlet source_text=String(j['Source text']??'').trim();\nconst files=Object.keys($binary??{});\nif(files.length && source_text) throw new Error('Provide source text OR a source file, not both.');\nif(files.length>1) throw new Error('Upload one source file at a time.');\nlet has_pdf=false;\nlet has_docx=false;\nlet source_file_base64;\nif(files.length){\n const file=$binary[files[0]];\n const ext=String(file.fileName??'').split('.').pop().toLowerCase();\n if(!['pdf','docx','md','markdown','txt'].includes(ext)) throw new Error('Upload a PDF, Word (.docx), Markdown (.md), or plain text (.txt) file.');\n const data=await this.helpers.getBinaryDataBuffer(0,files[0]);\n if(data.length>10000000) throw new Error('Use a source file smaller than 10 MB.');\n has_pdf=ext==='pdf';\n has_docx=ext==='docx';\n if(has_docx) source_file_base64=data.toString('base64');\n if(!has_pdf && !has_docx){\n  source_text=data.toString('utf8').replace(/^\\uFEFF/,'').trim();\n  if(source_text.includes('\\uFFFD')) throw new Error('Save your Markdown or text file using UTF-8 encoding, then upload it again.');\n }\n}\nreturn [{json:{topic_id,title,category,source_text,has_pdf,has_docx,source_file_base64,revision:'ingest-'+$execution.id},binary:has_pdf?{pdf:$binary[files[0]]}:{}}];"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "361ab24c-fcc7-5665-aa53-4fb88618a83d",
+      "name": "PDF provided",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "1b2c0504-1990-594e-a204-37aa18dad895",
+              "leftValue": "={{ $json.has_pdf }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "eddc6060-0fec-5d02-9457-e05bee11c44f",
+      "name": "Extract PDF text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        700,
+        -120
+      ],
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "pdf",
+        "options": {
+          "joinPages": true,
+          "maxPages": 30,
+          "keepSource": "json"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "806821eb-279d-583f-9dec-78831f0d8619",
+      "name": "Word document provided",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        620,
+        120
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "7ecbd311-7079-56ea-a8fe-b3d6eb3b565d",
+              "leftValue": "={{ $json.has_docx }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "48fb6b31-c618-51ae-b7cb-e3ba04400958",
+      "name": "Extract Word text",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        820,
+        180
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://embeddings:8000/v1/extract-docx",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({data:$json.source_file_base64}) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "39606b7a-313e-5f8c-8125-8036d19aa715",
+      "name": "Restore Word metadata",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        180
+      ],
+      "parameters": {
+        "jsCode": "return [{json:{...$(\"Normalize material\").first().json,source_file_base64:undefined,text:$json.text}}];"
+      }
+    },
+    {
+      "id": "3d62c678-047e-561b-9c2f-385b45d62f3c",
+      "name": "Validate source",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        940,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const j=$json;\nconst source_text=String(j.source_text || j.text || '').trim();\nif(source_text.length<40) throw new Error('Provide at least 40 characters of source text. Scanned PDFs need OCR first.');\nif(source_text.length>60000) throw new Error('Split this material into topics of at most 60,000 characters.');\nreturn [{json:{topic_id:j.topic_id,title:j.title,category:j.category,revision:j.revision,source_text}}];"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "c332ea71-34d6-547f-beab-ae2286452ea4",
+      "name": "Embedding profile",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1060,
+        -120
+      ],
+      "parameters": {
+        "jsCode": "return [{json:{...$json,embedding_provider:\"local\"}}];"
+      }
+    },
+    {
+      "id": "efc67b34-9eeb-5e5f-bf5b-6159b872afe3",
+      "name": "Index source vectors",
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePGVector",
+      "typeVersion": 1.3,
+      "position": [
+        1180,
+        0
+      ],
+      "parameters": {
+        "mode": "insert",
+        "tableName": "interview_documents_local",
+        "options": {
+          "skipInitializationCheck": true
+        }
+      },
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "postgres": {
+          "id": "mockInterviewPostgres",
+          "name": "Interview Postgres"
+        }
+      }
+    },
+    {
+      "id": "21904295-9394-5fe4-9a7d-5b518457d721",
+      "name": "Load source text",
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        1080,
+        260
+      ],
+      "parameters": {
+        "dataType": "json",
+        "jsonMode": "expressionData",
+        "jsonData": "={{ $json.source_text }}",
+        "textSplittingMode": "custom",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "topic_id",
+                "value": "={{ $json.topic_id }}"
+              },
+              {
+                "name": "title",
+                "value": "={{ $json.title }}"
+              },
+              {
+                "name": "category",
+                "value": "={{ $json.category }}"
+              },
+              {
+                "name": "revision",
+                "value": "={{ $json.revision }}"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "d89fc54c-eeac-5d84-b7c1-82acebae67b0",
+      "name": "Split source paragraphs",
+      "type": "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        460
+      ],
+      "parameters": {
+        "chunkSize": 800,
+        "chunkOverlap": 120,
+        "options": {}
+      }
+    },
+    {
+      "id": "1d0cc3f9-825b-5cc4-b474-f4aae91ee71c",
+      "name": "Embed material",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        1380,
+        260
+      ],
+      "parameters": {
+        "model": "local-multilingual-minilm",
+        "options": {}
+      },
+      "credentials": {
+        "openAiApi": {
+          "id": "mockInterviewLocalEmbeddings",
+          "name": "Interview local embeddings"
+        }
+      }
+    },
+    {
+      "id": "dfcccbca-be52-536f-84da-de0c7dc4da83",
+      "name": "Publish indexed topic",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "position": [
+        1430,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT interview_publish_topic($1::jsonb) AS result;",
+        "options": {
+          "queryReplacement": "={{ [JSON.stringify($(\"Embedding profile\").first().json)] }}"
+        }
+      },
+      "executeOnce": true,
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "postgres": {
+          "id": "mockInterviewPostgres",
+          "name": "Interview Postgres"
+        }
+      }
+    },
+    {
+      "id": "218d1f72-6309-5862-ad62-e38997b8483e",
+      "name": "Material saved",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        0
+      ],
+      "parameters": {
+        "jsCode": "return [{json:{formSubmittedHeader:\"Material indexed\",formSubmittedText:$json.result.output}}];"
+      }
+    },
+    {
+      "id": "b1e500ec-e056-5c79-9f34-9e33614dac57",
+      "name": "Explain upload error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        650
+      ],
+      "parameters": {
+        "jsCode": "const raw=String($json.error?.message ?? $json.error ?? $json.message ?? '').replace(/\\s*\\[line\\s+\\d+\\]\\s*$/i,'');\nlet message='The file could not be indexed. Please try again. Your previous indexed version is unchanged.';\nif(/^(Use |Upload |Enter |Provide |Choose |Save |Split |Unsupported )/.test(raw)) message=raw;\nelse if(/password|encrypted/i.test(raw)) message='This PDF is password-protected. Remove the password and upload it again.';\nelse if(/no.*text|empty.*text/i.test(raw)) message='No readable text was found. Use a text-based PDF, Markdown, or plain text file.';\nreturn [{json:{formSubmittedHeader:'Upload needs attention',formSubmittedText:message}}];"
+      }
+    },
+    {
+      "id": "41a155a0-08e9-5b7c-8ce8-6c6b186d9f2d",
+      "name": "Return upload result",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.3,
+      "position": [
+        1920,
+        120
+      ],
+      "parameters": {
+        "operation": "completion",
+        "respondWith": "text",
+        "completionTitle": "={{ $json.formSubmittedHeader }}",
+        "completionMessage": "={{ $json.formSubmittedText + \"<br><br><a href=/form/interview-materials>Add another material</a> · <a href=http://localhost:5677>Open voice interview</a> · <a href=/webhook/mock-interview-chat/chat>Text chat</a>\" }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "ea5e9034-1141-5367-b710-5429c9bb7fd6",
+      "name": "Guide 17",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -320
+      ],
+      "parameters": {
+        "content": "## 1 · Knowledge base\nOpen the production form at `/form/interview-materials`.\nUpload PDF, DOCX, Markdown or TXT. Use one topic per experience/story. Reusing its ID replaces old vectors only after indexing succeeds.\n\nEmbedding provider: **local**. Local indexing needs no paid API key. Interview/scoring provider: **gemini** (configured in Interview 02).",
+        "height": 240,
+        "width": 650,
+        "color": 5
+      }
+    }
+  ],
+  "connections": {
+    "Add interview material": {
+      "main": [
+        [
+          {
+            "node": "Normalize material",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize material": {
+      "main": [
+        [
+          {
+            "node": "PDF provided",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Explain upload error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract PDF text": {
+      "main": [
+        [
+          {
+            "node": "Validate source",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Explain upload error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate source": {
+      "main": [
+        [
+          {
+            "node": "Embedding profile",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Explain upload error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embedding profile": {
+      "main": [
+        [
+          {
+            "node": "Index source vectors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Index source vectors": {
+      "main": [
+        [
+          {
+            "node": "Publish indexed topic",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Explain upload error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish indexed topic": {
+      "main": [
+        [
+          {
+            "node": "Material saved",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Explain upload error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PDF provided": {
+      "main": [
+        [
+          {
+            "node": "Extract PDF text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Word document provided",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Word document provided": {
+      "main": [
+        [
+          {
+            "node": "Extract Word text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Validate source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Word text": {
+      "main": [
+        [
+          {
+            "node": "Restore Word metadata",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Explain upload error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Word metadata": {
+      "main": [
+        [
+          {
+            "node": "Validate source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split source paragraphs": {
+      "ai_textSplitter": [
+        [
+          {
+            "node": "Load source text",
+            "type": "ai_textSplitter",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load source text": {
+      "ai_document": [
+        [
+          {
+            "node": "Index source vectors",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embed material": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Index source vectors",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Material saved": {
+      "main": [
+        [
+          {
+            "node": "Return upload result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Explain upload error": {
+      "main": [
+        [
+          {
+            "node": "Return upload result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Los_Angeles",
+    "executionTimeout": 240,
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all"
+  },
+  "versionId": "d7f1c1dd-ed43-5364-9e57-00b9c7808962",
+  "pinData": {},
+  "tags": []
+}

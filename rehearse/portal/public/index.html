@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#172422">
+  <meta name="description" content="Your personal interview studio. Practice out loud with questions grounded in your own experience.">
+  <title>Rehearse — Interview studio</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body data-activity="ready">
+  <a class="skip-link" href="#answer">Skip to your answer</a>
+  <div class="shell">
+    <aside id="sidebar">
+      <div class="brand-row">
+        <a class="brand" href="/" aria-label="Rehearse interview studio home">
+          <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 10v4m5-8v12m5-15v18m5-11v4"/></svg></span>
+          <span>rehearse<span class="brand-subtitle">YOUR INTERVIEW STUDIO</span></span>
+        </a>
+        <button id="sidebar-toggle" type="button" aria-expanded="false" aria-controls="sidebar-panel">Settings <span aria-hidden="true">⌄</span></button>
+      </div>
+      <div id="sidebar-panel">
+        <div class="sidebar-intro"><span class="room-tag"><span></span> A space to get better</span><h1>Your experience.<br>A stronger story.</h1><p>Practice the moments that matter, in your own words.</p></div>
+        <div class="material-section">
+          <p class="section-label">YOUR KNOWLEDGE</p>
+          <a id="materials" class="material-link" href="http://localhost:5678/form/interview-materials" target="_blank" rel="noopener"><span class="material-icon" aria-hidden="true">＋</span><span>Add resume or story<small>PDF, Markdown or plain text</small></span><span class="link-arrow" aria-hidden="true">↗</span></a>
+          <p class="material-tip">Give each story a simple Topic ID, like <code>redis-cache</code>.</p>
+        </div>
+        <nav class="workspace-nav" aria-label="Your practice">
+          <p class="section-label">YOUR PRACTICE</p>
+          <button id="progress" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16M6 15v-4m6 4V5m6 10V8"/></svg>My progress<span aria-hidden="true">↗</span></button>
+          <button id="review" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4h12v16H8zM4 8v12m7-11h6m-6 5h4"/></svg>Review queue<span aria-hidden="true">↗</span></button>
+        </nav>
+        <div class="voice-settings">
+          <div class="settings-heading"><p class="section-label">VOICE SETTINGS</p><span class="voice-tag">Gemini audio</span></div>
+          <label class="toggle"><span>Read replies aloud</span><input id="auto-speak" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></label>
+          <label class="voice-label" for="voice">Interviewer voice</label>
+          <select id="voice"><option>Kore</option><option>Puck</option><option>Aoede</option><option>Charon</option><option>Fenrir</option></select>
+          <p class="settings-tip">Speak naturally. Review the transcript before sending.</p>
+        </div>
+        <div class="sidebar-bottom"><div class="connection"><span id="connection-dot" class="dot"></span><span id="connection">Checking local services…</span></div><span class="local-caption">LOCAL WORKSPACE · POWERED BY n8n</span></div>
+      </div>
+    </aside>
+    <main>
+      <header class="workspace-header"><div><p class="eyebrow">PRACTICE / INTERVIEW</p><h2>Practice room<span class="title-dot">.</span></h2><p class="header-description">Your stories. Better questions. More confidence.</p></div><div class="session-badge"><span class="session-light" aria-hidden="true"></span><span id="session-state" role="status" aria-live="polite">Ready to practice</span></div></header>
+      <div class="session-toolbar"><nav aria-label="Interview actions"><button id="start" type="button" class="primary"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 11 7-11 7z"/></svg>Start / continue</button><button id="next" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 5 10 7-10 7zM19 5v14"/></svg>Next topic</button></nav><button id="end" type="button" class="finish-button" aria-label="Finish and save feedback"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>Finish &amp; save<span class="finish-detail"> feedback</span></button></div>
+      <div class="interview-surface">
+        <div class="conversation-topline"><span><span class="interviewer-avatar" aria-hidden="true">r.</span>Your interviewer<span class="ai-tag">AI</span></span><span class="flow-label">Main question <span>→</span> One follow-up <span>→</span> Next question</span></div>
+        <section id="messages" aria-label="Interview conversation" aria-busy="false"></section>
+        <div class="reply-area">
+          <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+          <div class="composer">
+            <form id="answer-form">
+              <div class="composer-heading"><label for="answer">YOUR ANSWER</label><span class="input-hint">Speak it. Make it yours.</span></div>
+              <textarea id="answer" rows="3" maxlength="12000" placeholder="Tell the story in your own words…"></textarea>
+              <div class="composer-actions"><div class="record-actions"><button id="record" type="button" aria-pressed="false"><svg class="mic-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3m-4 0h8"/></svg><span class="record-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span id="record-label">Record answer</span></button><label class="upload-button" for="audio-file" title="Upload a recorded audio answer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 13 6-6a3 3 0 0 1 4 4l-8 8a5 5 0 0 1-7-7l9-9"/></svg><span>Upload audio</span><input id="audio-file" type="file" accept="audio/*,.wav,.webm,.m4a,.mp3,.ogg,.flac,.aac" class="sr-only"></label><span id="recording-time" aria-live="off"></span></div><button id="send" type="submit" class="primary">Send answer<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg></button></div>
+            </form>
+            <div id="recording-preview" hidden><audio id="recording-audio" controls aria-label="Your recorded answer"></audio><button id="transcribe" type="button">Transcribe again</button><button id="discard" type="button">Discard recording</button></div>
+          </div>
+          <div class="composer-hint"><span><kbd>Enter</kbd> to send <span class="hint-divider">·</span> <kbd>Shift + Enter</kbd> for a new line</span><span>Finish whenever you’re ready.</span></div>
+        </div>
+      </div>
+      <footer><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 10h14v11H5zM8 10V6a4 4 0 0 1 8 0v4"/></svg>Practice history saved in your local database</span><button id="new-chat" type="button">New chat <span aria-hidden="true">↗</span></button></footer>
+    </main>
+  </div>
+  <template id="welcome-template"><div class="welcome"><div class="welcome-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="voice-orb"><svg viewBox="0 0 100 64"><path d="M14 28v8m12-18v28m12-34v40m12-48v56m12-42v28m12-34v40m12-24v8"/></svg></div><span class="spark spark-one">✦</span><span class="spark spark-two">✦</span></div><p class="welcome-kicker">A LITTLE PRACTICE. A BIG DIFFERENCE.</p><h3>You have the experience.<br>Let’s find <em>the words.</em></h3><p class="welcome-description">An interview grounded in your real stories,<br>with follow-ups that actually listen.</p><div class="welcome-features"><span><b>01</b> Your story</span><span><b>02</b> One follow-up</span><span><b>03</b> Useful feedback</span></div><p class="welcome-prompt">Choose <strong>Start / continue</strong> when you’re ready.</p></div></template>
+</body>
+</html>

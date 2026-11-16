@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+.runtime/
+backups/
+__pycache__/
+*.pyc
+*.sql.gz
+node_modules/
+.DS_Store

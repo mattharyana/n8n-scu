@@ -1,0 +1,267 @@
+{
+  "id": "interviewVoiceSpeak",
+  "name": "Interview 05 - Speak interviewer reply",
+  "active": false,
+  "nodes": [
+    {
+      "id": "f2e7be72-de60-505c-ab9b-4ec71fe162d0",
+      "name": "Voice request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "interview-voice-speak",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "interview-voice-speak"
+    },
+    {
+      "id": "505e92a7-c2f7-526c-ad6f-ba4d3c90687f",
+      "name": "Validate audio request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "jsCode": "\nconst origin=$json.headers?.origin;\nif(origin && !/^http:\\/\\/(localhost|127\\.0\\.0\\.1):\\d+$/.test(origin)) return [{json:{statusCode:403,error:'Cross-site requests are not allowed.'}}];\nconst j=$json.body ?? $json;\nconst text=typeof j.text==='string'?j.text.trim():'';\nconst voice=j.voice ?? 'Kore';\nif(!text || text.length>10000) return [{json:{statusCode:400,error:'Choose a reply of 1–10,000 characters to read aloud.'}}];\nif(!['Kore','Puck','Aoede','Charon','Fenrir'].includes(voice)) return [{json:{statusCode:400,error:'Choose a supported interviewer voice.'}}];\nreturn [{json:{text,voice}}];\n"
+      }
+    },
+    {
+      "id": "33259fd7-232e-582b-9164-8c3b6b28eed8",
+      "name": "Valid audio request",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "7874d3e0-5849-5b81-890a-677e349b5429",
+              "leftValue": "={{ !$json.error }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "f61ea1d6-eeaa-5eed-ba8b-fa41af5f4777",
+      "name": "Build Gemini request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "jsCode": "return [{json:{requestBody:{contents:[{role:\"user\",parts:[{text:$json.text,speech_metadata:{style:\"Calm, clear professional interviewer. Natural conversational pace.\"}}]}],generationConfig:{responseModalities:[\"AUDIO\"],speechConfig:{voiceConfig:{voice:$json.voice}}}}}}];"
+      }
+    },
+    {
+      "id": "f69ad23d-d04c-5735-b808-6481983f8bee",
+      "name": "Gemini audio API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash-lite-tts:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
+        "options": {
+          "timeout": 90000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "mockInterviewGemini",
+          "name": "Interview Gemini - add API key"
+        }
+      }
+    },
+    {
+      "id": "39494e5d-0024-57c6-886d-5ad038d11e5c",
+      "name": "Format audio result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        0
+      ],
+      "parameters": {
+        "jsCode": "\nconst j=$json;\nconst status=Number(j.statusCode ?? j.error?.statusCode ?? 0);\nconst upstream=j.body?.error;\nif (status>=400 || j.error || upstream) {\n let message='Gemini could not complete this audio request. Please retry.';\n let code=status>=400 && status<=599?status:502;\n if(status===402) message='Gemini prepayment credits are depleted. Add prepaid credit in Google AI Studio billing, then retry. n8n Assistant credits do not cover Gemini API calls.';\n else if(status===401 || status===403) message='Gemini rejected the saved API key or project permissions. Check the Interview Gemini credential in n8n.';\n else if(status===429) message='Gemini rate limit or quota reached. Wait a moment or check your Google project quota.';\n else if(status===404) message='The configured Gemini audio model is unavailable. Check voice_models in model-config.json.';\n else if(status===400) message='Gemini rejected this audio format or model configuration. Try a WAV recording or check the configured audio model.';\n else if(!status) message='Gemini could not be reached or timed out. Please retry.';\n return [{json:{statusCode:code,error:message}}];\n}\nconst body=j.body ?? j;\nconst parts=(body.candidates?.[0]?.content?.parts ?? []).filter(p=>!p.thought);\n\nconst part=parts.find(p=>p.inlineData?.data || p.inline_data?.data);\nconst inline=part?.inlineData ?? part?.inline_data;\nif(!inline) return [{json:{statusCode:502,error:'Gemini returned no spoken audio. Please retry.'}}];\nlet audio=Buffer.from(inline.data,'base64');\nconst mime=String(inline.mimeType ?? inline.mime_type ?? '').toLowerCase();\nif(!audio.length || audio.length>20000000) return [{json:{statusCode:502,error:'Gemini returned invalid audio. Please retry.'}}];\nlet mimeType='audio/wav';\nif(audio.toString('ascii',0,4)==='RIFF' && audio.toString('ascii',8,12)==='WAVE') {\n if(audio.length<44) return [{json:{statusCode:502,error:'Gemini returned an incomplete WAV file. Please retry.'}}];\n} else if(mime.startsWith('audio/l16') || mime.startsWith('audio/pcm')) {\n const rate=Number(mime.match(/rate=(\\d+)/)?.[1] ?? 24000);\n if(audio.length%2 || rate<8000 || rate>48000) return [{json:{statusCode:502,error:'Gemini returned invalid PCM audio. Please retry.'}}];\n const header=Buffer.alloc(44);\n header.write('RIFF',0);header.writeUInt32LE(36+audio.length,4);header.write('WAVE',8);\n header.write('fmt ',12);header.writeUInt32LE(16,16);header.writeUInt16LE(1,20);header.writeUInt16LE(1,22);\n header.writeUInt32LE(rate,24);header.writeUInt32LE(rate*2,28);header.writeUInt16LE(2,32);header.writeUInt16LE(16,34);\n header.write('data',36);header.writeUInt32LE(audio.length,40);audio=Buffer.concat([header,audio]);\n} else if(mime==='audio/mpeg' || mime==='audio/mp3') mimeType='audio/mpeg';\nelse return [{json:{statusCode:502,error:'Gemini returned an unsupported audio format. Please retry.'}}];\nreturn [{json:{statusCode:200,audioBase64:audio.toString('base64'),mimeType}}];\n"
+      }
+    },
+    {
+      "id": "f3a410e4-b153-5478-ba0b-2d33ffa2d0b0",
+      "name": "Return audio result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1200,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode ?? 200 }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "7ee23758-23c2-5419-92dc-24ad16960e0d",
+      "name": "Guide 7",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -300
+      ],
+      "parameters": {
+        "content": "## Gemini voice\nCalled by the local interview portal. Uses your saved Interview Gemini credential.\nTranscripts are reviewed before submission. Audio requests are not saved in n8n execution payloads.\nModel: **gemini-3.8-flash-lite-tts**",
+        "height": 220,
+        "width": 660,
+        "color": 5
+      }
+    }
+  ],
+  "connections": {
+    "Voice request": {
+      "main": [
+        [
+          {
+            "node": "Validate audio request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate audio request": {
+      "main": [
+        [
+          {
+            "node": "Valid audio request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid audio request": {
+      "main": [
+        [
+          {
+            "node": "Build Gemini request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return audio result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Gemini request": {
+      "main": [
+        [
+          {
+            "node": "Gemini audio API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini audio API": {
+      "main": [
+        [
+          {
+            "node": "Format audio result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format audio result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format audio result": {
+      "main": [
+        [
+          {
+            "node": "Return audio result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Los_Angeles",
+    "executionTimeout": 240,
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false
+  },
+  "versionId": "ee56d626-ce43-5a2b-a466-99b9c64edbd9",
+  "pinData": {},
+  "tags": []
+}

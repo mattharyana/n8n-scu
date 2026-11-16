@@ -1,0 +1,87 @@
+name: mock-interview
+services:
+  portal:
+    build: ./portal
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${PORTAL_PORT:-5677}:5677"
+    environment:
+      N8N_BASE_URL: http://n8n:5678
+      N8N_PUBLIC_URL: http://localhost:${N8N_PORT:-5678}
+    volumes:
+      - ./model-config.json:/app/model-config.json:ro
+    depends_on:
+      - n8n
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:5677/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  embeddings:
+    build: ./embeddings
+    restart: unless-stopped
+    volumes:
+      - embedding_models:/models
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
+  postgres:
+    image: pgvector/pgvector:0.8.1-pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: interview
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run scripts/setup.py first}
+      POSTGRES_DB: interview
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U interview -d interview"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:2.47.7
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${N8N_PORT:-5678}:5678"
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: interview
+      DB_POSTGRESDB_USER: interview
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_POSTGRESDB_SCHEMA: n8n
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?Run scripts/setup.py first}
+      N8N_HOST: localhost
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      N8N_WEBHOOK_URL: http://localhost:${N8N_PORT:-5678}/
+      N8N_EDITOR_BASE_URL: http://localhost:${N8N_PORT:-5678}/
+      N8N_SECURE_COOKIE: "false"
+      GENERIC_TIMEZONE: America/Los_Angeles
+      TZ: America/Los_Angeles
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_PERSONALIZATION_ENABLED: "false"
+      N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
+      EXECUTIONS_DATA_SAVE_ON_SUCCESS: all
+      EXECUTIONS_DATA_SAVE_ON_ERROR: all
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: 168
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./workflows:/import/workflows:ro
+      - ./.runtime:/import/runtime:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      embeddings:
+        condition: service_healthy
+volumes:
+  postgres_data:
+  n8n_data:
+  embedding_models:
