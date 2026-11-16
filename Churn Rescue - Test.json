@@ -1,0 +1,575 @@
+{
+  "name": "Churn Rescue - Test",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "0a620ace-3204-440b-9102-0bd6a973e775",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1iD8jVtbV6YENux-bnCR5lKRw2OChHKTSa2OzxZMVj5A",
+          "mode": "list",
+          "cachedResultName": "Churn Rescue",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1iD8jVtbV6YENux-bnCR5lKRw2OChHKTSa2OzxZMVj5A/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 219733264,
+          "mode": "list",
+          "cachedResultName": "Customers",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1iD8jVtbV6YENux-bnCR5lKRw2OChHKTSa2OzxZMVj5A/edit#gid=219733264"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        224,
+        0
+      ],
+      "id": "7215026f-4fd7-4d8d-8329-4d71ab6569ff",
+      "name": "Get row(s) in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "lNfC7D7yn5gR2gwB",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "maxItems": 3
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        448,
+        0
+      ],
+      "id": "a2d66e93-50ff-495f-8037-410eace8d5f7",
+      "name": "Limit"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const tenure = Number($json['Tenure Months']);\nconst charges = Number($json['Monthly Charges']);\nconst techSupport = $json['Tech Support'];\nconst internet = $json['Internet Service'];\n\nlet points = 0;\nif (tenure < 12) points += 2;\nif (charges > 80) points += 2;\nif (techSupport === 'No') points += 1;\n\nconst risk_level = points >= 4 ? 'high' : points >= 2 ? 'medium' : 'low';\n\nlet primary_driver = 'none';\nif (tenure < 12) primary_driver = 'short tenure';\nelse if (charges > 80) primary_driver = 'high monthly charges';\nelse if (techSupport === 'No') primary_driver = 'no tech support';\nelse if (internet === 'Fiber optic') primary_driver = 'fiber internet';\n\nreturn {\n  json: {\n    customerID: $json['CustomerID'],\n    name: $json['Name'],\n    email: $json['Email'],\n    tenure,\n    Contract: $json['Contract'],\n    MonthlyCharges: charges,\n    InternetService: internet,\n    TechSupport: techSupport,\n    PaymentMethod: $json['Payment Method'],\n    risk_points: points,\n    risk_level,\n    primary_driver\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ],
+      "id": "62d3f8ae-cca2-40e0-a7aa-d3f8a3ec50b1",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 4
+          },
+          "conditions": [
+            {
+              "id": "42d9d9ed-7a32-4d27-89e3-57018e12cc62",
+              "leftValue": "={{ $json.risk_level }}",
+              "rightValue": "low",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        896,
+        0
+      ],
+      "id": "c55632cf-17cc-4237-bc25-b432989e810b",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Customer: {{ $json.name }} (ID {{ $json.customerID }})\nTenure: {{ $json.tenure }} months\nMonthly charges: ${{ $json.MonthlyCharges }}\nInternet service: {{ $json.InternetService }}\nTech support: {{ $json.TechSupport }}\nContract: {{ $json.Contract }}\nRisk level: {{ $json.risk_level }}\nPrimary risk driver: {{ $json.primary_driver }}",
+        "options": {
+          "systemMessage": "You are a customer retention specialist for a telecom company.\nFirst, use the Offers tool to read the approved offers. Pick exactly ONE offer whose best_for rule fits this customer. If none fit well, use the fallback offer (O5). Use the customer's Primary risk driver to choose: short tenure → O6, high monthly charges → O2, no tech support → O1, fiber internet → O3. If the driver is none, use O5. Confirm the choice against the Offers tool and never invent an offer.\nNever invent an offer. Never promise a discount above that offer's max_discount.\nIn the reason, cite at least two facts about the customer.\nRespond with ONLY valid JSON, no markdown, no code fences:\n{\"offer_id\": \"\", \"offer_description\": \"\", \"reason\": \"one sentence on why this offer fits\", \"message\": \"a friendly 3-sentence email to the customer by first name, presenting the offer. Do not mention churn, risk, or predictions.\"}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1120,
+        -96
+      ],
+      "id": "8a9fc65f-4d56-4bd2-b166-bfaa5f578ee0",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "responsesApiEnabled": false,
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        992,
+        112
+      ],
+      "id": "1f594fc9-103f-4e55-a276-93277c424c98",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1iD8jVtbV6YENux-bnCR5lKRw2OChHKTSa2OzxZMVj5A",
+          "mode": "list",
+          "cachedResultName": "Churn Rescue",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1iD8jVtbV6YENux-bnCR5lKRw2OChHKTSa2OzxZMVj5A/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 263504434,
+          "mode": "list",
+          "cachedResultName": "Offers",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1iD8jVtbV6YENux-bnCR5lKRw2OChHKTSa2OzxZMVj5A/edit#gid=263504434"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.7,
+      "position": [
+        1280,
+        112
+      ],
+      "id": "81aa6ee0-f517-48b6-9002-3fefb94f1d50",
+      "name": "Offers",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "lNfC7D7yn5gR2gwB",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = String($json.output || '').replace(/```json|```/g, '').trim();\nlet p;\ntry {\n  p = JSON.parse(raw);\n} catch (e) {\n  return { json: { parse_error: true, raw_response: raw } };\n}\nconst cust = $('If').item.json;\nreturn { json: {\n  customerID: cust.customerID,\n  name: cust.name,\n  email: cust.email,\n  risk_level: cust.risk_level,\n  offer_id: p.offer_id,\n  offer_chosen: p.offer_description,\n  reason: p.reason,\n  drafted_message: p.message,\n  parse_error: false\n}};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1488,
+        -96
+      ],
+      "id": "2325308e-216f-4f8f-8b5e-23f5e81a1631",
+      "name": "Parse offer"
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "select": "=channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0CHZU5SQ0H",
+          "mode": "id"
+        },
+        "user": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "message": "=*Retention offer for approval*\nCustomer: {{ $json.name }} ({{ $json.customerID }})\nRisk level: {{ $json.risk_level }}\nOffer: {{ $json.offer_chosen }}\nWhy: {{ $json.reason }}\n\nDraft email:\n{{ $json.drafted_message }}",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double"
+          }
+        },
+        "options": {
+          "limitWaitTime": {
+            "values": {
+              "resumeAmount": 10,
+              "resumeUnit": "minutes"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.7,
+      "position": [
+        1712,
+        -96
+      ],
+      "id": "5a2a82d8-ca56-4d80-a917-0fb5b2451531",
+      "name": "Send message and wait for response",
+      "webhookId": "54ea6840-3651-49f6-8d05-a7c8c643119b",
+      "credentials": {
+        "slackApi": {
+          "id": "VWPO9Mwi3Bzt3rtG",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 4
+          },
+          "conditions": [
+            {
+              "id": "6d2e381a-795e-493f-9e3d-1b7ad96743b7",
+              "leftValue": "={{ $json.data.approved }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        1936,
+        -96
+      ],
+      "id": "bdaecfd2-9dc3-49cc-b90e-854fdfd651fd",
+      "name": "Approved?"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Parse offer').item.json.email }}",
+        "subject": "=A special offer for you, {{ $('Parse offer').item.json.name.split(' ')[0] }}",
+        "emailType": "text",
+        "message": "={{ $('Parse offer').item.json.drafted_message }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2128,
+        -112
+      ],
+      "id": "d9fa3a8e-a103-43e3-99d2-b844058e5128",
+      "name": "Send a message",
+      "webhookId": "69d48d04-74aa-4835-8ec0-60ae89075292",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "OlRxwxX7JtsYqb50",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1iD8jVtbV6YENux-bnCR5lKRw2OChHKTSa2OzxZMVj5A",
+          "mode": "list",
+          "cachedResultName": "Churn Rescue",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1iD8jVtbV6YENux-bnCR5lKRw2OChHKTSa2OzxZMVj5A/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1726414828,
+          "mode": "list",
+          "cachedResultName": "Log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1iD8jVtbV6YENux-bnCR5lKRw2OChHKTSa2OzxZMVj5A/edit#gid=1726414828"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "customerID": "={{ $('Parse offer').item.json.customerID }}",
+            "risk_level": "={{ $('Parse offer').item.json.risk_level }}",
+            "offer_chosen": "={{ $('Parse offer').item.json.offer_chosen }}",
+            "drafted_message": "={{ $('Parse offer').item.json.drafted_message }}",
+            "approval_status": "Approved",
+            "created_at": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "customerID",
+              "displayName": "customerID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "risk_level",
+              "displayName": "risk_level",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "offer_chosen",
+              "displayName": "offer_chosen",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "drafted_message",
+              "displayName": "drafted_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "approval_status",
+              "displayName": "approval_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "responded",
+              "displayName": "responded",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "escalated",
+              "displayName": "escalated",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2352,
+        -112
+      ],
+      "id": "f4c8e2e8-660a-4457-8adc-4c88358cd7c0",
+      "name": "Append row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "lNfC7D7yn5gR2gwB",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Parse offer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Offers": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse offer": {
+      "main": [
+        [
+          {
+            "node": "Send message and wait for response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send message and wait for response": {
+      "main": [
+        [
+          {
+            "node": "Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved?": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "25e19e90-cdeb-40d6-93a3-30ad44146ea2",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "8a290f6e903f9790b93ab3a037da7093f4ae9bba19d12d352e60e885e7b12406"
+  },
+  "nodeGroups": [],
+  "id": "9vTEh0WtxXSq0s8j",
+  "tags": []
+}
